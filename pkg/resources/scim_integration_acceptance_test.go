@@ -203,7 +203,7 @@ func TestAcc_ScimIntegration_InvalidIncomplete(t *testing.T) {
 	})
 }
 
-func TestAcc_ScimIntegration_migrateFromVersion091(t *testing.T) {
+func TestAcc_ScimIntegration_migrateFromVersion092(t *testing.T) {
 	id := acc.TestClient().Ids.RandomAccountObjectIdentifier()
 	role := snowflakeroles.GenericScimProvisioner
 	resourceName := "snowflake_scim_integration.test"
@@ -221,7 +221,7 @@ func TestAcc_ScimIntegration_migrateFromVersion091(t *testing.T) {
 						Source:            "Snowflake-Labs/snowflake",
 					},
 				},
-				Config: scimIntegrationv091(id.Name(), role.Name()),
+				Config: scimIntegrationv092(id.Name(), role.Name()),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "name", id.Name()),
 					resource.TestCheckResourceAttr(resourceName, "provisioner_role", role.Name()),
@@ -229,7 +229,7 @@ func TestAcc_ScimIntegration_migrateFromVersion091(t *testing.T) {
 			},
 			{
 				ProtoV6ProviderFactories: acc.TestAccProtoV6ProviderFactories,
-				Config:                   scimIntegrationv092(id.Name(), role.Name()),
+				Config:                   scimIntegrationv093(id.Name(), role.Name()),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
 				},
@@ -242,7 +242,7 @@ func TestAcc_ScimIntegration_migrateFromVersion091(t *testing.T) {
 	})
 }
 
-func scimIntegrationv091(name, roleName string) string {
+func scimIntegrationv092(name, roleName string) string {
 	s := `
 resource "snowflake_scim_integration" "test" {
 	name             = "%s"
@@ -253,7 +253,7 @@ resource "snowflake_scim_integration" "test" {
 	return fmt.Sprintf(s, name, sdk.ScimSecurityIntegrationScimClientGeneric, roleName)
 }
 
-func scimIntegrationv092(name, roleName string) string {
+func scimIntegrationv093(name, roleName string) string {
 	s := `
 resource "snowflake_scim_integration" "test" {
 	name             = "%s"
