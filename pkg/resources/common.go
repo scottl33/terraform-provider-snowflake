@@ -103,3 +103,28 @@ func RSAKeyHash(key string) (string, error) {
 	hash := sha256.Sum256(pubKeyBytes)
 	return fmt.Sprintf("SHA256:%s", base64.StdEncoding.EncodeToString(hash[:])), nil
 }
+
+func getParameterInAccount(ctx context.Context, client *sdk.Client, param string) (string, error) {
+	params, err := client.Parameters.ShowParameters(ctx, &sdk.ShowParametersOptions{
+		Like: &sdk.Like{
+			Pattern: sdk.Pointer(param),
+		},
+		In: &sdk.ParametersIn{
+			Account: sdk.Pointer(true),
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	var found *sdk.Parameter
+	for _, v := range params {
+		if v.Key == param {
+			found = v
+			break
+		}
+	}
+	if found == nil {
+		return "", fmt.Errorf("parameter %s not found", param)
+	}
+	return found.Value, nil
+}

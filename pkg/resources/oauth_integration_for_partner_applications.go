@@ -49,11 +49,7 @@ var oauthIntegrationForPartnerApplicationsSchema = map[string]*schema.Schema{
 		Default:      "unknown",
 		Optional:     true,
 		Description:  "Specifies whether to allow the client to exchange a refresh token for an access token when the current access token has expired.",
-		// DiffSuppressFunc: func(k, oldValue, newValue string, d *schema.ResourceData) bool {
-		// 	return d.GetRawConfig().AsValueMap()["oauth_issue_refresh_tokens"].IsNull()
-		// },
 		DiffSuppressFunc: func(k, oldValue, newValue string, d *schema.ResourceData) bool {
-			fmt.Printf("diff supp %s-%s\n", oldValue, newValue)
 			return oldValue == "true" && newValue == "unknown"
 		},
 	},
@@ -79,7 +75,19 @@ var oauthIntegrationForPartnerApplicationsSchema = map[string]*schema.Schema{
 		Type:        schema.TypeSet,
 		Elem:        &schema.Schema{Type: schema.TypeString},
 		Optional:    true,
+		Computed:    true,
 		Description: "List of roles that a user cannot explicitly consent to using after authenticating. Do not include ACCOUNTADMIN, ORGADMIN or SECURITYADMIN as they are already implicitly enforced and will cause in-place updates.",
+		DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+			value := d.Get("oauth_add_privileged_roles_to_blocked_list").(bool)
+			if !value {
+				return old == new
+			}
+			return old == "ACCOUNTADMIN" || old == "SECURITYADMIN"
+		},
+	},
+	"oauth_add_privileged_roles_to_blocked_list": {
+		Type:     schema.TypeBool,
+		Computed: true,
 	},
 	"oauth_authorization_endpoint": {
 		Type:        schema.TypeString,
@@ -118,12 +126,6 @@ var oauthIntegrationForPartnerApplicationsSchema = map[string]*schema.Schema{
 		Computed:    true,
 		Description: "Date and time when the OAuth integration was created.",
 	},
-	"snowflake_defaults": {
-		Type:        schema.TypeMap,
-		Elem:        &schema.Schema{Type: schema.TypeString},
-		Computed:    true,
-		Description: "A list of snowflake defaults.",
-	},
 }
 
 func OauthIntegrationForPartnerApplications() *schema.Resource {
@@ -133,20 +135,8 @@ func OauthIntegrationForPartnerApplications() *schema.Resource {
 		UpdateContext: UpdateContextOauthIntegrationForPartnerApplications,
 		DeleteContext: DeleteContextSecurityIntegration,
 		Schema:        oauthIntegrationForPartnerApplicationsSchema,
-		CustomizeDiff: customdiff.Sequence(
-		// BoolComputedIf("oauth_issue_refresh_tokens", func(client *sdk.Client, id sdk.AccountObjectIdentifier) (string, error) {
-		// 	props, err := client.SecurityIntegrations.Describe(context.Background(), id)
-		// 	if err != nil {
-		// 		return "", err
-		// 	}
-		// 	for _, prop := range props {
-		// 		if prop.GetName() == "OAUTH_ISSUE_REFRESH_TOKENS" {
-		// 			return prop.GetDefault(), nil
-		// 		}
-		// 	}
-		// 	return "", fmt.Errorf("prop OAUTH_ISSUE_REFRESH_TOKENS not found")
-		// }),
-		// SetEmptyForceNewIfChangeInt("oauth_refresh_token_validity"),
+		CustomizeDiff: customdiff.All(
+			SuppressIfParameterSet("blocked_roles_list", "OAUTH_ADD_PRIVILEGED_ROLES_TO_BLOCKED_LIST"),
 		),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
@@ -180,9 +170,6 @@ func CreateContextOauthIntegrationForPartnerApplications(ctx context.Context, d 
 
 	if v, ok := d.GetOk("enabled"); ok {
 		req.WithEnabled(v.(bool))
-	}
-	if !d.GetRawConfig().AsValueMap()["oauth_issue_refresh_tokens"].IsNull() {
-		req.WithOauthIssueRefreshTokens(d.Get("oauth_issue_refresh_tokens").(bool))
 	}
 	if v := d.Get("oauth_issue_refresh_tokens").(string); v != "unknown" {
 		parsed, err := strconv.ParseBool(v)
@@ -344,7 +331,12 @@ func ReadContextOauthIntegrationForPartnerApplications(ctx context.Context, d *s
 			log.Printf("[WARN] unexpected property %v returned from Snowflake", name)
 		}
 	}
-	if err := d.Set("snowflake_defaults", defaults); err != nil {
+	paramRaw, err := getParameterInAccount(ctx, client, "OAUTH_ADD_PRIVILEGED_ROLES_TO_BLOCKED_LIST")
+	if err != nil {
+		return nil
+	}
+	param := helpers.StringToBool(paramRaw)
+	if err := d.Set("oauth_add_privileged_roles_to_blocked_list", param); err != nil {
 		return diag.FromErr(err)
 	}
 	return nil
@@ -372,9 +364,6 @@ func UpdateContextOauthIntegrationForPartnerApplications(ctx context.Context, d 
 		set.WithEnabled(d.Get("enabled").(bool))
 	}
 
-	// if !d.GetRawConfig().AsValueMap()["oauth_issue_refresh_tokens"].IsNull() {
-	// 	set.WithOauthIssueRefreshTokens(d.Get("oauth_issue_refresh_tokens").(bool))
-	// }
 	if d.HasChange("oauth_issue_refresh_tokens") {
 		if v := d.Get("oauth_issue_refresh_tokens").(string); v != "unknown" {
 			parsed, err := strconv.ParseBool(v)
@@ -383,8 +372,8 @@ func UpdateContextOauthIntegrationForPartnerApplications(ctx context.Context, d 
 			}
 			set.WithOauthIssueRefreshTokens(parsed)
 		} else {
-			def := d.Get("snowflake_defaults").(map[string]any)
-			set.WithOauthIssueRefreshTokens(helpers.StringToBool(def["OAUTH_ISSUE_REFRESH_TOKENS"].(string)))
+			// TODO: fix
+			set.WithOauthIssueRefreshTokens(true)
 		}
 	}
 
@@ -397,12 +386,9 @@ func UpdateContextOauthIntegrationForPartnerApplications(ctx context.Context, d 
 		if v > 0 {
 			set.WithOauthRefreshTokenValidity(v)
 		} else {
-			def := d.Get("snowflake_defaults").(map[string]any)
-			v, err := strconv.Atoi(def["OAUTH_REFRESH_TOKEN_VALIDITY"].(string))
-			if err != nil {
-				return diag.FromErr(err)
-			}
-			set.WithOauthRefreshTokenValidity(v)
+			// TODO: fix
+			// TODO: better logic, like in docs
+			set.WithOauthRefreshTokenValidity(7776000)
 		}
 	}
 
